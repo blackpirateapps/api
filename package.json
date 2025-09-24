@@ -1,0 +1,10 @@
+{
+  "name": "phoenix-forest-service",
+  "version": "1.0.0",
+  "type": "module",
+  "dependencies": {
+    "@libsql/client": "latest",
+    "cookie": "latest"
+  }
+}
+
