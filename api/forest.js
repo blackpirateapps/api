@@ -1,22 +1,32 @@
 import { createClient } from "@libsql/client";
 
-// --- CORS Configuration ---
+// --- CORS Configuration (unchanged) ---
 const allowedOrigins = [process.env.MAIN_APP_URL, 'http://localhost:3000'];
-
 function setCorsHeaders(req, res) {
     const origin = req.headers.origin;
     if (allowedOrigins.includes(origin)) {
         res.setHeader('Access-Control-Allow-Origin', origin);
     }
     res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
-    // Authorization header is no longer needed
     res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
     res.setHeader('Access-Control-Allow-Credentials', 'true');
 }
-// --- End CORS Configuration ---
 
-// AUTHENTICATION HAS BEEN REMOVED
-// The checkAuth function is deleted.
+// --- NEW: Database Initialization for this service ---
+async function initForestDb(client) {
+    // This command safely creates the 'forest' table if it doesn't already exist.
+    await client.execute(`
+        CREATE TABLE IF NOT EXISTS forest (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            treeType TEXT NOT NULL,
+            status TEXT NOT NULL,
+            purchaseDate TEXT NOT NULL,
+            matureDate TEXT NOT NULL
+        );
+    `);
+}
+// --- End Initialization ---
+
 
 export default async function handler(req, res) {
     setCorsHeaders(req, res);
@@ -29,10 +39,11 @@ export default async function handler(req, res) {
         authToken: process.env.TURSO_AUTH_TOKEN,
     });
     
-    // The authentication check `if (!checkAuth(req))` has been removed.
-    // The API is now open to the public.
-
     try {
+        // --- This is the fix ---
+        // Run the initialization on every request. It's safe and efficient.
+        await initForestDb(client);
+
         const nowISO = new Date().toISOString();
         await client.execute({
             sql: "UPDATE forest SET status = 'matured' WHERE status = 'growing' AND matureDate <= ?;",
