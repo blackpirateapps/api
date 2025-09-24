@@ -38,7 +38,7 @@ export default async function handler(req, res) {
     }
 
     try {
-        // Check for and update matured trees before any other action
+        // This check runs for every request to keep tree statuses up-to-date.
         const nowISO = new Date().toISOString();
         await client.execute({
             sql: "UPDATE forest SET status = 'matured' WHERE status = 'growing' AND matureDate <= ?;",
@@ -52,8 +52,7 @@ export default async function handler(req, res) {
                 return res.status(400).json({ message: 'Tree type and growth duration are required.' });
             }
 
-            // For now, let's hardcode the cost on the server for security
-            const cost = 200;
+            const cost = 200; // Hardcoded server-side cost
 
             const userStateResult = await client.execute("SELECT coinsAtLastRelapse, lastRelapse FROM user_state WHERE id = 1;");
             if (userStateResult.rows.length === 0) {
@@ -61,7 +60,6 @@ export default async function handler(req, res) {
             }
             const state = userStateResult.rows[0];
 
-            // Calculate total available coins (server-side)
             const totalHours = (Date.now() - new Date(state.lastRelapse).getTime()) / (1000 * 60 * 60);
             const streakCoins = totalHours > 0 ? Math.floor(10 * Math.pow(totalHours, 1.2)) : 0;
             const totalCoins = state.coinsAtLastRelapse + streakCoins;
@@ -70,7 +68,6 @@ export default async function handler(req, res) {
                 return res.status(400).json({ message: 'Not enough coins.' });
             }
 
-            // Deduct cost and calculate new baseline
             const newCoinBalance = totalCoins - cost;
             const newCoinsAtLastRelapse = newCoinBalance - streakCoins;
 
@@ -79,7 +76,6 @@ export default async function handler(req, res) {
                 args: [newCoinsAtLastRelapse]
             });
             
-            // Add the new tree to the forest
             const purchaseDate = new Date();
             const matureDate = new Date(purchaseDate.getTime() + growthHours * 60 * 60 * 1000);
 
@@ -88,15 +84,23 @@ export default async function handler(req, res) {
                 args: [treeId, purchaseDate.toISOString(), matureDate.toISOString()]
             });
 
-        }
+            // After purchasing, fetch the updated forest list and send it back.
+            const forestResult = await client.execute("SELECT * FROM forest ORDER BY purchaseDate DESC;");
+            return res.status(200).json(forestResult.rows); // Use return to end execution here.
 
-        // --- Fetch all trees (for both GET and POST responses) ---
-        const forestResult = await client.execute("SELECT * FROM forest ORDER BY purchaseDate DESC;");
-        res.status(200).json(forestResult.rows);
+        } else if (req.method === 'GET') {
+            // --- Fetch all trees ---
+            const forestResult = await client.execute("SELECT * FROM forest ORDER BY purchaseDate DESC;");
+            return res.status(200).json(forestResult.rows); // Use return to end execution here.
+        } else {
+            // Handle other methods if necessary
+            res.setHeader('Allow', ['GET', 'POST', 'OPTIONS']);
+            return res.status(405).end(`Method ${req.method} Not Allowed`);
+        }
 
     } catch (error) {
         console.error('Forest API Error:', error);
-        res.status(500).json({ message: 'An internal server error occurred.' });
+        return res.status(500).json({ message: 'An internal server error occurred.' });
     } finally {
         client.close();
     }
