@@ -12,7 +12,7 @@ function setCorsHeaders(req, res) {
     res.setHeader('Access-Control-Allow-Credentials', 'true');
 }
 
-// --- NEW: Database Initialization for this service ---
+// --- Database Initialization for this service ---
 async function initForestDb(client) {
     // This command safely creates the 'forest' table if it doesn't already exist.
     await client.execute(`
@@ -24,8 +24,30 @@ async function initForestDb(client) {
             matureDate TEXT NOT NULL
         );
     `);
+    // NOTE: The creation for 'user_state' has been removed as per your instruction.
 }
-// --- End Initialization ---
+
+// --- NEW HELPER: To parse JSON from request body ---
+async function parseJsonBody(req) {
+    return new Promise((resolve, reject) => {
+        let body = '';
+        req.on('data', chunk => {
+            body += chunk.toString();
+        });
+        req.on('end', () => {
+            try {
+                // Handle cases where the body might be empty
+                resolve(body ? JSON.parse(body) : {});
+            } catch (e) {
+                reject(new Error("Invalid JSON in request body"));
+            }
+        });
+        req.on('error', err => {
+            reject(err);
+        });
+    });
+}
+// --- End Helper ---
 
 
 export default async function handler(req, res) {
@@ -40,8 +62,6 @@ export default async function handler(req, res) {
     });
     
     try {
-        // --- This is the fix ---
-        // Run the initialization on every request. It's safe and efficient.
         await initForestDb(client);
 
         const nowISO = new Date().toISOString();
@@ -51,7 +71,10 @@ export default async function handler(req, res) {
         });
 
         if (req.method === 'POST') {
-            const { treeId, growthHours } = req.body;
+            // FIX: Use the helper to correctly parse the body
+            const body = await parseJsonBody(req);
+            const { treeId, growthHours } = body;
+
             if (!treeId || !growthHours) {
                 return res.status(400).json({ message: 'Tree type and growth duration are required.' });
             }
@@ -59,7 +82,7 @@ export default async function handler(req, res) {
             const cost = 200;
 
             const userStateResult = await client.execute("SELECT coinsAtLastRelapse, lastRelapse FROM user_state WHERE id = 1;");
-            if (userStateResult.rows.length === 0) return res.status(404).json({ message: 'User state not found.' });
+            if (userStateResult.rows.length === 0) return res.status(404).json({ message: 'User state not found. Please log in to the main app first.' });
             
             const state = userStateResult.rows[0];
 
